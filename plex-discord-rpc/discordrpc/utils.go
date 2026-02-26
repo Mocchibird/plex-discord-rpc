@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tnychn/mpv-discord/discordrpc/payloads"
+	"plex-discord-rpc/discordrpc/payloads"
 )
 
 func init() {

@@ -8,7 +8,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/tnychn/mpv-discord/mpvrpc/pipe"
+	"plex-discord-rpc/mpvrpc/pipe"
 )
 
 type Client struct {

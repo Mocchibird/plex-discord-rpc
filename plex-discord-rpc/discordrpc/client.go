@@ -7,8 +7,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/tnychn/mpv-discord/discordrpc/payloads"
-	"github.com/tnychn/mpv-discord/discordrpc/pipe"
+	"plex-discord-rpc/discordrpc/payloads"
+	"plex-discord-rpc/discordrpc/pipe"
 )
 
 type ClientError struct {

@@ -3,7 +3,6 @@
 package pipe
 
 import (
-	"fmt"
 	"net"
 	"path/filepath"
 	"time"
@@ -12,6 +11,6 @@ import (
 )
 
 func GetPipeSocket(path string) (net.Conn, error) {
-	path = filepath.FromSlash(path) // convert it into a Windows-compatible path
-	return npipe.DialTimeout(fmt.Sprintf(`\\.\pipe\%s`, path), time.Second*5)
+	path = filepath.FromSlash(path)
+	return npipe.DialTimeout(path, time.Second*5)
 }
