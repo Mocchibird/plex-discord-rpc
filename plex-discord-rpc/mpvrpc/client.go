@@ -1,15 +1,6 @@
 package mpvrpc
 
-import (
-	"bufio"
-	"encoding/json"
-	"errors"
-	"io"
-	"net"
-	"sync"
-
-	"plex-discord-rpc/mpvrpc/pipe"
-)
+import ("bufio"; "encoding/json"; "errors"; "io"; "log"; "net"; "sync"; "plex-discord-rpc/mpvrpc/pipe")
 
 type Client struct {
 	reqid  int
@@ -38,31 +29,30 @@ func (c *Client) readloop() {
 	reader := bufio.NewReader(c.socket)
 	for {
 		select {
-		case <-c.qchan:
-			return
+		case <-c.qchan: return
 		default:
 			// in case the client is closed already
-			if c.socket == nil {
-				return
-			}
+			if c.socket == nil { return }
+
 			// read data from socket
 			data, err := reader.ReadBytes('\n')
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
+				if !errors.Is(err, io.EOF) {
+					log.Println("readloop error:", err)
 				}
-				continue
+				return
 			}
+
 			// unmarshal received data
 			var res response
-			if err = json.Unmarshal(data, &res); err != nil {
+			err = json.Unmarshal(data, &res)
+			if err != nil {
 				continue
 			}
+
 			// handle response
 			c.mutex.Lock()
-			if res.Event != "" {
-				// NOTE: event is not handled
-			} else if req, ok := c.requests[res.RequestID]; ok {
+			if req, ok := c.requests[res.RequestID]; ok {
 				delete(c.requests, res.RequestID)
 				req.reschan <- &res
 			}
@@ -113,9 +103,8 @@ func (c *Client) GetPropertyString(key string) (string, error) {
 }
 
 func (c *Client) Close() error {
-	defer func() {
-		c.socket = nil
-	}()
+	if c.socket == nil { return nil }
+	defer func() { c.socket = nil }()
 	c.qchan <- struct{}{}
 	return c.socket.Close()
 }

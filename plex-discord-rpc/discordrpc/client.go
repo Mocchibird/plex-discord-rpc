@@ -1,15 +1,6 @@
 package discordrpc
 
-import (
-	"bytes"
-	"encoding/binary"
-	"encoding/json"
-	"net"
-	"time"
-
-	"plex-discord-rpc/discordrpc/payloads"
-	"plex-discord-rpc/discordrpc/pipe"
-)
+import ("bytes"; "encoding/binary"; "encoding/json"; "net"; "time"; "plex-discord-rpc/discordrpc/payloads"; "plex-discord-rpc/discordrpc/pipe")
 
 type ClientError struct {
 	Code    int
@@ -28,24 +19,29 @@ func NewClient(cid string) *Client {
 }
 
 func (c *Client) read() error {
+	var err error
+	do := func(fn func() error) {
+		if err != nil { 
+			return
+		}
+		err = fn()
+	}
+
 	// timeout when blocking for too long
 	d := time.Now().Add(time.Second * 3)
-	if err := c.socket.SetReadDeadline(d); err != nil {
-		return err
-	}
+	do(func() error { return c.socket.SetReadDeadline(d) })
+
 	// read 1024 bytes data from socket
 	data := make([]byte, 1024)
-	if _, err := c.socket.Read(data); err != nil {
-		return err
-	}
+	do(func() error {
+		_, err2 := c.socket.Read(data)
+		return err2
+	})
+
 	// parse first 8 bytes (header)
-	var header struct {
-		OPCode int32
-		Length int32
-	}
-	if err := binary.Read(bytes.NewReader(data[:8]), binary.LittleEndian, &header); err != nil {
-		return err
-	}
+	var header struct {OPCode int32; Length int32}
+	do(func() error { return binary.Read(bytes.NewReader(data[:8]), binary.LittleEndian, &header) })
+
 	// parse remaining bytes (payload)
 	var payload struct {
 		// - case 1
@@ -58,49 +54,46 @@ func (c *Client) read() error {
 			Message string `json:"message"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(bytes.Trim(data[8:], "\x00"), &payload); err != nil {
-		return err
-	}
+	do(func() error { return json.Unmarshal(bytes.Trim(data[8:], "\x00"), &payload) })
+
 	// handle error (if any)
+	if err != nil { return err}
 	if (payload.Code != 0 && payload.Message != "") || payload.Evt == "ERROR" {
 		return &ClientError{payload.Code, payload.Message}
 	}
+
 	return nil
 }
 
 func (c *Client) send(opcode int, payload payloads.Payload) (err error) {
 	// encode data into JSON format
 	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
+	if err != nil { return }
+
 	// form the payload -> [header(opcode,length)][data]
 	buffer := new(bytes.Buffer)
 	_ = binary.Write(buffer, binary.LittleEndian, int32(opcode))
 	_ = binary.Write(buffer, binary.LittleEndian, int32(len(data)))
-	if _, err = buffer.Write(data); err != nil {
-		return
-	}
+	_, err = buffer.Write(data)
+	if err != nil { return }
+
 	// send out the payload
-	if _, err = c.socket.Write(buffer.Bytes()); err != nil {
-		return
-	}
+	_, err = c.socket.Write(buffer.Bytes())
+	if err != nil { return }
+
 	// wait for response and read it
 	// return c.read()
 	return nil // NOTE: response error is not handled
 }
 
 func (c *Client) Open() (err error) {
-	if c.socket, err = pipe.GetPipeSocket(); err != nil {
-		return
-	}
+	if c.socket, err = pipe.GetPipeSocket(); err != nil { return }
 	return c.send(0, payloads.Handshake{V: "1", ClientID: c.cid})
 }
 
 func (c *Client) Close() error {
-	defer func() {
-		c.socket = nil
-	}()
+	if c.socket == nil { return nil }
+	defer func() { c.socket = nil }()
 	return c.socket.Close()
 }
 

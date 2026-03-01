@@ -2,13 +2,7 @@
 
 package pipe
 
-import (
-	"net"
-	"path/filepath"
-	"time"
-
-	npipe "gopkg.in/natefinch/npipe.v2"
-)
+import ("net"; "path/filepath"; "time"; npipe "gopkg.in/natefinch/npipe.v2")
 
 func GetPipeSocket(path string) (net.Conn, error) {
 	path = filepath.FromSlash(path)

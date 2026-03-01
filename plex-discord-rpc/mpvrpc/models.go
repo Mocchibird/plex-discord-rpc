@@ -1,6 +1,6 @@
 package mpvrpc
 
-import "errors"
+import ("errors"; "time")
 
 type response struct {
 	Error     string      `json:"error"`
@@ -17,11 +17,13 @@ type request struct {
 }
 
 func (req *request) Response() (interface{}, error) {
-	res := <-req.reschan
-	if res.Error != "success" {
-		return nil, errors.New(res.Error)
-	}
-	return res.Data, nil
+    select {
+    case res := <-req.reschan:
+        if res.Error != "" && res.Error != "success" { return nil, errors.New(res.Error) }
+        return res.Data, nil
+    case <-time.After(3 * time.Second):
+        return nil, errors.New("timed out waiting for response")
+    }
 }
 
 func newRequest(reqid int, cmd string, args ...interface{}) *request {

@@ -1,16 +1,6 @@
 package discordrpc
 
-import (
-	"math/rand"
-	"os"
-	"time"
-
-	"plex-discord-rpc/discordrpc/payloads"
-)
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
+import ("math/rand"; "os"; "plex-discord-rpc/discordrpc/payloads")
 
 var letters = []rune("0123456789abcdefghijklmnopqrstuvwxyz")
 

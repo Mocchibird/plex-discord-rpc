@@ -1,28 +1,6 @@
 package main
 
-import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"strings"
-	"strconv"
-	"syscall"
-	"time"
-
-	"plex-discord-rpc/discordrpc"
-	"plex-discord-rpc/mpvrpc"
-)
-
-var (
-	client   *mpvrpc.Client
-	presence *discordrpc.Presence
-	currTime = time.Now().Local().UnixMilli()
-)
+import ("encoding/json"; "errors"; "fmt"; "io"; "log"; "net/http"; "net/url"; "os"; "strings"; "strconv"; "syscall"; "time"; "plex-discord-rpc/discordrpc"; "plex-discord-rpc/mpvrpc")
 
 const (
 	largeImageKey  = "logo"
@@ -81,15 +59,13 @@ type plexResource struct {
 	} `json:"connections"`
 }
 
-func init() {
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.Lmsgprefix)
-
-	client = mpvrpc.NewClient()
-	presence = discordrpc.NewPresence(os.Args[2])
-}
+var (
+	client   *mpvrpc.Client
+	presence *discordrpc.Presence
+)
 
 func getMediaInfo() (info mediaInfo, err error) {
+	// funcs
 	getString := func(key string) (prop string) {
 		prop, err = client.GetPropertyString(key)
 		if err != nil {
@@ -101,67 +77,73 @@ func getMediaInfo() (info mediaInfo, err error) {
 	getProperty := func(key string) (prop interface{}) {
 		prop, err = client.GetProperty(key)
 		if err != nil {
-			log.Println("GetPropertyString error:", err)
-			return ""
+			log.Println("GetProperty error:", err)
+			return nil
 		}
 		return
 	}
 
-	if v := getProperty("pause"); v != nil {
-		if b, ok := v.(bool); ok {
+	// mpv properties
+	property := getProperty("pause")
+	if property != nil {
+		if b, ok := property.(bool); ok {
 			info.paused = b
 		}
 	}
 	
-	if v := getProperty("time-pos"); v != nil {
-		switch val := v.(type) {
+	property = getProperty("time-pos")
+	if property != nil {
+		switch val := property.(type) {
 		case float64:
 			info.timePos = val
 		case int:
 			info.timePos = float64(val)
 		case string:
-			if f, err := strconv.ParseFloat(val, 64); err == nil {
-				info.timePos = f
+			float, err := strconv.ParseFloat(val, 64)
+			if err == nil {
+				info.timePos = float
 			}
 		}
 	}
 	
-	if v := getProperty("idle-active"); v != nil {
-		if b, ok := v.(bool); ok {
+	property = getProperty("idle-active")
+	if property != nil {
+		if b, ok := property.(bool); ok {
 			info.idle = b
-			if b {
-				log.Println("idle")
-				return
-			}
 		}
 	}
 	
-	if v := getProperty("duration"); v != nil {
-		switch val := v.(type) {
+	property = getProperty("duration")
+	if property != nil {
+		switch val := property.(type) {
 		case float64:
 			info.duration = val
 		case int:
 			info.duration = float64(val)
 		case string:
-			if f, err := strconv.ParseFloat(val, 64); err == nil {
-				info.duration = f
+			float, err := strconv.ParseFloat(val, 64)
+			if err == nil {
+				info.duration = float
 			}
 		}
 	}
 
+
+	// plex
 	var media plexMediaItem
 	plexUAT := strings.Trim(getString("user-data/plex/user-access-token"), "\"")
+	if err != nil { return }
 	plexClientID := strings.Trim(getString("user-data/plex/client-id"), "\"")
+	if err != nil { return }
 	mediaString := getString("user-data/plex/playing-media")
+	if err != nil { return }
 	if mediaString == "" {
 		info.idle = true
 		return
 	}
-	if e := json.Unmarshal([]byte(mediaString), &media); e != nil {
-		info.idle = true
-		return
-	}
-	if media == (plexMediaItem{}) {
+	err = json.Unmarshal([]byte(mediaString), &media)
+	if err != nil { return }
+	if media == (plexMediaItem{}){
 		info.idle = true
 		return
 	}
@@ -183,28 +165,26 @@ func getMediaInfo() (info mediaInfo, err error) {
 
 	if media.URL != "" && plexUAT != "" && plexClientID != "" && !metadataItem.IsAdult {
 		parsed, e := url.Parse(media.URL)
-		if e != nil {
-			return
-		}
+		if e != nil { return }
+
 		var baseURL = parsed.Scheme + "://" + parsed.Host
 
-		req, _ := http.NewRequest("GET", "https://clients.plex.tv/api/v2/resources?includeHttps=1", nil)
+		req, e := http.NewRequest("GET", "https://clients.plex.tv/api/v2/resources?includeHttps=1", nil)
+		if e != nil { return }
+
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Plex-Product", largeImageText)
 		req.Header.Set("X-Plex-Token", plexUAT)
 		req.Header.Set("X-Plex-Client-Identifier", plexClientID)
 
 		res, e := http.DefaultClient.Do(req)
-		if e != nil {
-			return
-		}
+		if e != nil { return }
+
 		defer res.Body.Close()
 
 		var response []plexResource
 		e = json.NewDecoder(res.Body).Decode(&response)
-		if e != nil {
-			return
-		}
+		if e != nil { return }
 
 		var token = ""
 		for i := range response {
@@ -254,7 +234,18 @@ func getMediaInfo() (info mediaInfo, err error) {
 func getActivity() (activity discordrpc.Activity, err error) {
 	mediaInfo, err := getMediaInfo()
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println("getMediaInfo Error:", err)
+		return
+	}
+
+	// Idle
+	if mediaInfo.idle {
+		activity.SmallImageKey = imageIdle
+		activity.LargeImageKey = largeImageKey
+		activity.LargeImageText = largeImageText
+		activity.Details = "Nothing Playing"
+		activity.SmallImageText = "Nothing Playing"
+		activity.State = ""
 		return
 	}
 
@@ -288,10 +279,7 @@ func getActivity() (activity discordrpc.Activity, err error) {
 	}
 
 	// Small Image
-	if mediaInfo.idle {
-		activity.SmallImageKey = imageIdle
-		activity.SmallImageText = "Nothing is Playing"
-	} else if mediaInfo.paused {
+ 	if mediaInfo.paused {
 		activity.SmallImageKey = imagePause
 		activity.SmallImageText = "Paused"
 	} else {
@@ -300,49 +288,49 @@ func getActivity() (activity discordrpc.Activity, err error) {
 	}
 
 	// Timestamps
-	if mediaInfo.duration > 0 && mediaInfo.timePos > 0 {
-		startTimePos := currTime - (int64(mediaInfo.timePos) * 1000)
+	if !mediaInfo.paused && mediaInfo.duration > 0 && mediaInfo.timePos >= 0 {
+		now := time.Now().UnixMilli()
+		startTimePos := now - (int64(mediaInfo.timePos) * 1000)
 		duration := startTimePos + (int64(mediaInfo.duration) * 1000)
-
-		if !mediaInfo.paused && !mediaInfo.idle {
-			activity.Timestamps = &discordrpc.ActivityTimestamps{Start: startTimePos, End: duration}
-			currTime = time.Now().Local().UnixMilli()
-		}
+		activity.Timestamps = &discordrpc.ActivityTimestamps{Start: startTimePos, End: duration}
 	}
+
 	return
 }
 
 func openClient() {
-	if err := client.Open(os.Args[1]); err != nil {
-		log.Fatalln(err)
-	}
+	err := client.Open(os.Args[1])
+	if err != nil { log.Fatalln(err) }
 	log.Println("(mpv-ipc): connected")
 }
 
 func openPresence() {
 	for range time.Tick(500 * time.Millisecond) {
-		if client.IsClosed() {
-			return
-		}
-		if err := presence.Open(); err == nil {
-			break
-		}
+		if client.IsClosed() { return }
+		err := presence.Open()
+		if err == nil { break }
 	}
 	log.Println("(discord-rpc): connected")
+}
+
+func init() {
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.Lmsgprefix)
+
+	client = mpvrpc.NewClient()
+	presence = discordrpc.NewPresence(os.Args[2])
 }
 
 func main() {
 	defer func() {
 		if !client.IsClosed() {
-			if err := client.Close(); err != nil {
-				log.Fatalln(err)
-			}
+			err := client.Close()
+			if err != nil { log.Fatalln(err) }
 			log.Println("(mpv-ipc): disconnected")
 		}
 		if !presence.IsClosed() {
-			if err := presence.Close(); err != nil {
-				log.Fatalln(err)
-			}
+			err := presence.Close()
+			if err != nil { log.Fatalln(err) }
 			log.Println("(discord-rpc): disconnected")
 		}
 	}()
@@ -351,28 +339,29 @@ func main() {
 	go openPresence()
 
 	for range time.Tick(time.Second) {
+		if client.IsClosed() { return }
 		activity, err := getActivity()
 		if err != nil {
-			if errors.Is(err, syscall.EPIPE) {
-				break
-			} else if !errors.Is(err, io.EOF) {
-				client.Close()
+			if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) {
+				return
 			}
+			log.Println(err)
+			continue
 		}
 		if !presence.IsClosed() {
-			go func() {
-				if err = presence.Update(activity); err != nil {
+			go func(a discordrpc.Activity) {
+				err := presence.Update(a)
+				if err != nil {
 					if errors.Is(err, syscall.EPIPE) {
-						if err = presence.Close(); err != nil {
-							log.Fatalln(err)
-						}
+						err = presence.Close()
+						if err != nil { log.Fatalln(err) }
 						log.Println("(discord-rpc): reconnecting...")
 						go openPresence()
 					} else if !errors.Is(err, io.EOF) {
 						log.Println(err)
 					}
 				}
-			}()
+			}(activity)
 		}
 	}
 }

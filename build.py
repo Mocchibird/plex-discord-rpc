@@ -34,6 +34,15 @@ def copy_plugin(target_name):
             shutil.copytree(src, dst, dirs_exist_ok=True)
         else:
             shutil.copy2(src, dst)
+    scripts = {
+        "windows": "install_windows.bat",
+        "macos": "install_darwin.sh",
+        "linux": "install_linux.sh",
+    }
+    script = os.path.join("install_scripts", scripts[target_name])
+    if os.path.exists(script):
+        shutil.copy2(script, os.path.join(dest, scripts[target_name]))
+        print(f"Copied {scripts[target_name]} to {dest}")
     print(f"Copied plugin files to {dest}")
 
 def zip_folder(target_name):

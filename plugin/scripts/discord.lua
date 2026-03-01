@@ -30,7 +30,7 @@ local is_windows = file_exists(script_dir .. "plex-discord-rpc.exe")
 local binary_name = is_windows and "plex-discord-rpc.exe" or "plex-discord-rpc"
 local binary_path = script_dir .. binary_name
 
-local socket_name = "discordsocket"
+local socket_name = "plexdiscordsocket"
 local mpv_socket = is_windows and ("\\\\.\\pipe\\" .. socket_name) or ("/tmp/" .. socket_name)
 
 if not file_exists(binary_path) then

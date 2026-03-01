@@ -32,16 +32,10 @@ Discord Rich Presence Integration for [Plex Desktop](https://www.plex.tv/en-ca/m
 Installer scripts for Windows, Linux and OSX are provided.
 
 1. Download .zip from [the latest release](https://github.com/Glitchtest51/plex-discord-rpc/releases) and extract it.
-2. Copy all the contents of the extracted folder into the application configuration directory:
-
-- **Windows**
-  ```
-  %localappdata%\Plex
-  ```
-- **Linux / macOS**
-  ```
-  not sure, pr or issue if you know
-  ```
+2. Run the installer script of your platform.
+    * **MacOS**: not sure, pr or issue if you know
+    **Linux**: not sure, pr or issue if you know
+    * **Windows**: run `install_windows.bat` by double clicking on it for Windows
 
 ## Configurations
 
