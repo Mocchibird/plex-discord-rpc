@@ -1,6 +1,21 @@
 package main
 
-import ("encoding/json"; "errors"; "fmt"; "io"; "log"; "net/http"; "net/url"; "os"; "strings"; "strconv"; "syscall"; "time"; "plex-discord-rpc/discordrpc"; "plex-discord-rpc/mpvrpc")
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"plex-discord-rpc/discordrpc"
+	"plex-discord-rpc/mpvipc"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+)
 
 const (
 	largeImageKey  = "logo"
@@ -60,7 +75,7 @@ type plexResource struct {
 }
 
 var (
-	client   *mpvrpc.Client
+	client   *mpvipc.Client
 	presence *discordrpc.Presence
 )
 
@@ -90,7 +105,7 @@ func getMediaInfo() (info mediaInfo, err error) {
 			info.paused = b
 		}
 	}
-	
+
 	property = getProperty("time-pos")
 	if property != nil {
 		switch val := property.(type) {
@@ -105,14 +120,14 @@ func getMediaInfo() (info mediaInfo, err error) {
 			}
 		}
 	}
-	
+
 	property = getProperty("idle-active")
 	if property != nil {
 		if b, ok := property.(bool); ok {
 			info.idle = b
 		}
 	}
-	
+
 	property = getProperty("duration")
 	if property != nil {
 		switch val := property.(type) {
@@ -128,22 +143,29 @@ func getMediaInfo() (info mediaInfo, err error) {
 		}
 	}
 
-
 	// plex
 	var media plexMediaItem
 	plexUAT := strings.Trim(getString("user-data/plex/user-access-token"), "\"")
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	plexClientID := strings.Trim(getString("user-data/plex/client-id"), "\"")
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	mediaString := getString("user-data/plex/playing-media")
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	if mediaString == "" {
 		info.idle = true
 		return
 	}
 	err = json.Unmarshal([]byte(mediaString), &media)
-	if err != nil { return }
-	if media == (plexMediaItem{}){
+	if err != nil {
+		return
+	}
+	if media == (plexMediaItem{}) {
 		info.idle = true
 		return
 	}
@@ -165,12 +187,16 @@ func getMediaInfo() (info mediaInfo, err error) {
 
 	if media.URL != "" && plexUAT != "" && plexClientID != "" && !metadataItem.IsAdult {
 		parsed, e := url.Parse(media.URL)
-		if e != nil { return }
+		if e != nil {
+			return
+		}
 
 		var baseURL = parsed.Scheme + "://" + parsed.Host
 
 		req, e := http.NewRequest("GET", "https://clients.plex.tv/api/v2/resources?includeHttps=1", nil)
-		if e != nil { return }
+		if e != nil {
+			return
+		}
 
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Plex-Product", largeImageText)
@@ -178,13 +204,17 @@ func getMediaInfo() (info mediaInfo, err error) {
 		req.Header.Set("X-Plex-Client-Identifier", plexClientID)
 
 		res, e := http.DefaultClient.Do(req)
-		if e != nil { return }
+		if e != nil {
+			return
+		}
 
 		defer res.Body.Close()
 
 		var response []plexResource
 		e = json.NewDecoder(res.Body).Decode(&response)
-		if e != nil { return }
+		if e != nil {
+			return
+		}
 
 		var token = ""
 		for i := range response {
@@ -279,7 +309,7 @@ func getActivity() (activity discordrpc.Activity, err error) {
 	}
 
 	// Small Image
- 	if mediaInfo.paused {
+	if mediaInfo.paused {
 		activity.SmallImageKey = imagePause
 		activity.SmallImageText = "Paused"
 	} else {
@@ -300,15 +330,21 @@ func getActivity() (activity discordrpc.Activity, err error) {
 
 func openClient() {
 	err := client.Open(os.Args[1])
-	if err != nil { log.Fatalln(err) }
+	if err != nil {
+		log.Fatalln(err)
+	}
 	log.Println("(mpv-ipc): connected")
 }
 
 func openPresence() {
 	for range time.Tick(500 * time.Millisecond) {
-		if client.IsClosed() { return }
+		if client.IsClosed() {
+			return
+		}
 		err := presence.Open()
-		if err == nil { break }
+		if err == nil {
+			break
+		}
 	}
 	log.Println("(discord-rpc): connected")
 }
@@ -317,7 +353,7 @@ func init() {
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.Lmsgprefix)
 
-	client = mpvrpc.NewClient()
+	client = mpvipc.NewClient()
 	presence = discordrpc.NewPresence(os.Args[2])
 }
 
@@ -325,12 +361,16 @@ func main() {
 	defer func() {
 		if !client.IsClosed() {
 			err := client.Close()
-			if err != nil { log.Fatalln(err) }
+			if err != nil {
+				log.Fatalln(err)
+			}
 			log.Println("(mpv-ipc): disconnected")
 		}
 		if !presence.IsClosed() {
 			err := presence.Close()
-			if err != nil { log.Fatalln(err) }
+			if err != nil {
+				log.Fatalln(err)
+			}
 			log.Println("(discord-rpc): disconnected")
 		}
 	}()
@@ -339,7 +379,9 @@ func main() {
 	go openPresence()
 
 	for range time.Tick(time.Second) {
-		if client.IsClosed() { return }
+		if client.IsClosed() {
+			return
+		}
 		activity, err := getActivity()
 		if err != nil {
 			if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) {
@@ -354,7 +396,9 @@ func main() {
 				if err != nil {
 					if errors.Is(err, syscall.EPIPE) {
 						err = presence.Close()
-						if err != nil { log.Fatalln(err) }
+						if err != nil {
+							log.Fatalln(err)
+						}
 						log.Println("(discord-rpc): reconnecting...")
 						go openPresence()
 					} else if !errors.Is(err, io.EOF) {

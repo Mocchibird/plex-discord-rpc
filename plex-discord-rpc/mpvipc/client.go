@@ -1,6 +1,13 @@
-package mpvrpc
+package mpvipc
 
-import ("bufio"; "encoding/json"; "errors"; "io"; "log"; "net"; "sync"; "plex-discord-rpc/mpvrpc/pipe")
+import (
+	"bufio"
+	"encoding/json"
+	"log"
+	"net"
+	"plex-discord-rpc/mpvipc/pipe"
+	"sync"
+)
 
 type Client struct {
 	reqid  int
@@ -29,17 +36,14 @@ func (c *Client) readloop() {
 	reader := bufio.NewReader(c.socket)
 	for {
 		select {
-		case <-c.qchan: return
+		case <-c.qchan:
+			return
 		default:
-			// in case the client is closed already
-			if c.socket == nil { return }
-
 			// read data from socket
 			data, err := reader.ReadBytes('\n')
 			if err != nil {
-				if !errors.Is(err, io.EOF) {
-					log.Println("readloop error:", err)
-				}
+				log.Println("readloop error:", err)
+				c.Close()
 				return
 			}
 
@@ -103,10 +107,16 @@ func (c *Client) GetPropertyString(key string) (string, error) {
 }
 
 func (c *Client) Close() error {
-	if c.socket == nil { return nil }
-	defer func() { c.socket = nil }()
-	c.qchan <- struct{}{}
-	return c.socket.Close()
+    c.mutex.Lock()
+	for _, req := range c.requests { close(req.reschan) }
+	c.requests = make(map[int]*request)
+    defer c.mutex.Unlock()
+
+    if c.socket == nil { return nil }
+
+    err := c.socket.Close()
+    c.socket = nil
+    return err
 }
 
 func (c *Client) IsClosed() bool { return c.socket == nil }
