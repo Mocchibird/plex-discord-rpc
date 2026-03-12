@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,6 +29,12 @@ const (
 
 	pollInterval  = time.Second
 	retryInterval = 500 * time.Millisecond
+)
+
+var (
+	globalLitterboxURL string
+	globalSourceURL    string
+	globalExp          time.Time
 )
 
 type plexMediaItem struct {
@@ -78,6 +86,71 @@ var (
 	client   *mpvipc.Client
 	presence *discordrpc.Presence
 )
+
+func UploadToLitterbox(imageURL string, timeOption string) (string, time.Time, error) {
+	resp, err := http.Get(imageURL)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", time.Time{}, fmt.Errorf("failed to download image: status %d", resp.StatusCode)
+	}
+
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to read image: %w", err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	_ = writer.WriteField("reqtype", "fileupload")
+	_ = writer.WriteField("time", timeOption)
+
+	part, err := writer.CreateFormFile("fileToUpload", "upload.png")
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if _, err = part.Write(imageData); err != nil {
+		return "", time.Time{}, err
+	}
+
+	writer.Close()
+
+	uploadResp, err := http.Post("https://litterbox.catbox.moe/resources/internals/api.php", writer.FormDataContentType(), body)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to upload image: %w", err)
+	}
+	defer uploadResp.Body.Close()
+
+	if uploadResp.StatusCode != http.StatusOK {
+		return "", time.Time{}, fmt.Errorf("upload failed: status %d", uploadResp.StatusCode)
+	}
+
+	uploadedURLBytes, err := io.ReadAll(uploadResp.Body)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to read upload response: %w", err)
+	}
+	uploadedURL := string(uploadedURLBytes)
+
+	var duration time.Duration
+	switch timeOption {
+	case "1h":
+		duration = time.Hour
+	case "12h":
+		duration = 12 * time.Hour
+	case "24h":
+		duration = 24 * time.Hour
+	case "72h":
+		duration = 72 * time.Hour
+	default:
+		return "", time.Time{}, fmt.Errorf("invalid time option: %s", timeOption)
+	}
+	expiration := time.Now().Add(duration)
+
+	return uploadedURL, expiration, nil
+}
 
 func getMediaInfo() (info mediaInfo, err error) {
 	// funcs
@@ -238,21 +311,39 @@ func getMediaInfo() (info mediaInfo, err error) {
 			}
 		}
 
+		var imageURL = ""
+
 		if token != "" {
 			switch metadataItem.Type {
 			case "episode":
 				if metadataItem.ParentThumb != "" {
-					info.thumbURL = baseURL + metadataItem.ParentThumb + "?X-Plex-Token=" + token
+					imageURL = baseURL + metadataItem.ParentThumb + "?X-Plex-Token=" + token
 				} else if metadataItem.GrandparentThumb != "" {
-					info.thumbURL = baseURL + metadataItem.GrandparentThumb + "?X-Plex-Token=" + token
+					imageURL = baseURL + metadataItem.GrandparentThumb + "?X-Plex-Token=" + token
 				}
 			case "movie":
 				if metadataItem.Thumb != "" {
-					info.thumbURL = baseURL + metadataItem.Thumb + "?X-Plex-Token=" + token
+					imageURL = baseURL + metadataItem.Thumb + "?X-Plex-Token=" + token
 				}
 			default:
 				if metadataItem.Thumb != "" {
-					info.thumbURL = baseURL + metadataItem.Thumb + "?X-Plex-Token=" + token
+					imageURL = baseURL + metadataItem.Thumb + "?X-Plex-Token=" + token
+				}
+			}
+		}
+
+		if imageURL != "" {
+			if imageURL == globalSourceURL && !globalExp.IsZero() && time.Now().Before(globalExp) {
+				info.thumbURL = globalLitterboxURL
+			} else {
+				uploadedURL, expiration, err := UploadToLitterbox(imageURL, "12h")
+				if err != nil {
+					fmt.Println("Failed to upload to Litterbox:", err)
+				} else {
+					info.thumbURL = uploadedURL
+					globalLitterboxURL = uploadedURL
+					globalSourceURL = imageURL
+					globalExp = expiration
 				}
 			}
 		}
