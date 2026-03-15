@@ -98,6 +98,14 @@ type cachedThumb struct {
     expiry time.Time
 }
 
+func pruneExpiredThumbCache(now time.Time) {
+    for key, entry := range thumbURLCache {
+        if entry.expiry.Before(now) {
+            delete(thumbURLCache, key)
+        }
+    }
+}
+
 func getMediaInfo() (info mediaInfo, err error) {
     // funcs
     getString := func(key string) (prop string) {
@@ -242,8 +250,10 @@ func getPublicThumbURL(guid string, plexUAT string, plexClientID string) string 
     }
 
     cacheKey := guid
+    now := time.Now()
     thumbCacheMux.Lock()
-    if cached, ok := thumbURLCache[cacheKey]; ok && time.Now().Before(cached.expiry) {
+    pruneExpiredThumbCache(now)
+    if cached, ok := thumbURLCache[cacheKey]; ok && now.Before(cached.expiry) {
         thumbCacheMux.Unlock()
         return cached.url
     }
@@ -283,8 +293,7 @@ func getPublicThumbURL(guid string, plexUAT string, plexClientID string) string 
         thumbURL := ""
         if strings.HasPrefix(thumb, "http") {
             thumbURL = thumb
-        }
-        if strings.HasPrefix(thumb, "/") {
+        } else if strings.HasPrefix(thumb, "/") {
             thumbURL = "https://metadata-static.plex.tv" + thumb
         }
         if thumbURL != "" {
